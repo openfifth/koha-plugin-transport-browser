@@ -135,11 +135,18 @@ sub _browse_transport {
     # Attempt connection
     my $connected = 0;
     my $connection_error;
+    my $base_path = '/';
 
     try {
         $transport->connect();
         $connected = 1;
-        $self->{logger}->info("Transport Browser: Connected to '$transport_name'");
+        $self->{logger}->info("Transport Browser: Connected successfully");
+
+        # Determine the base path (initial working directory)
+        if ($transport->{connection} && $transport->{connection}->can('cwd')) {
+            $base_path = $transport->{connection}->cwd;
+            $self->{logger}->info("Transport Browser: Base path (initial cwd): '$base_path'");
+        }
     }
     catch {
         $connection_error = $_;
@@ -157,20 +164,48 @@ sub _browse_transport {
         return;
     }
 
-    # Change to requested directory if specified
-    my $current_path = '/';
-    if ( defined $path && $path ne '' ) {
+    # Determine the actual path to use for operations
+    my $actual_path;
+    my $display_path;
+
+    if ( !defined $path || $path eq '' || $path eq '/' ) {
+        $actual_path = $base_path;
+        $display_path = '/';
+    } else {
+        # UI paths are absolute from user's perspective, convert to actual paths
+        # Remove leading / from UI path and append to base_path
+        my $relative_path = $path;
+        $relative_path =~ s|^/||;
+        $actual_path = $base_path eq '/' ? "/$relative_path" : "$base_path/$relative_path";
+        $display_path = $path;
+    }
+
+    $self->{logger}->info("Transport Browser: UI path '$path' -> actual path '$actual_path', display path '$display_path'");
+
+    # Change to requested directory if different from base_path
+    my $current_path = $display_path;
+    if ( $actual_path ne $base_path ) {
+        $self->{logger}->info("Transport Browser: Attempting to change to directory '$actual_path'");
         try {
-            $transport->change_directory( $path );
-            $current_path = $path;
+            $transport->change_directory( $actual_path );
+            $self->{logger}->info("Transport Browser: Successfully changed to directory '$actual_path'");
+            # Debug: Check actual working directory
+            if ($transport->{connection} && $transport->{connection}->can('cwd')) {
+                my $actual_cwd = $transport->{connection}->cwd;
+                $self->{logger}->info("Transport Browser: Actual working directory after change: '$actual_cwd'");
+            }
         }
         catch {
-            $self->{logger}->warn("Transport Browser: Failed to change to directory '$path': $_");
-            # Try to stay at root
+            $self->{logger}->warn("Transport Browser: Failed to change to directory '$actual_path': $_");
+            # Try to stay at base path
             try {
-                $transport->change_directory( undef );
+                $transport->change_directory( $base_path );
+                $current_path = '/';
+                $display_path = '/';
+                $self->{logger}->info("Transport Browser: Fell back to base directory");
             }
             catch {
+                $self->{logger}->warn("Transport Browser: Failed to change to base directory: $_");
                 # Ignore - we'll show what we can
             };
         };
@@ -181,23 +216,33 @@ sub _browse_transport {
     my $listing_error;
 
     try {
-        my $raw_files = $transport->list_files();
+        $self->{logger}->info("Transport Browser: Listing files in directory '$actual_path' (display: '$display_path')");
+        # Debug: Check actual working directory before listing
+        if ($transport->{connection} && $transport->{connection}->can('cwd')) {
+            my $actual_cwd = $transport->{connection}->cwd;
+            $self->{logger}->info("Transport Browser: Actual working directory before list: '$actual_cwd'");
+        }
+        my $raw_files = $transport->list_files($actual_path);
         $files = $self->_format_file_list( $raw_files, $transport_type );
+        $self->{logger}->info("Transport Browser: Found " . scalar(@$files) . " files/directories");
+        foreach my $file (@$files) {
+            $self->{logger}->debug("Transport Browser: File: " . $file->{name} . " (dir: " . ($file->{is_dir} ? 'yes' : 'no') . ")");
+        }
     }
     catch {
         $listing_error = $_;
         $self->{logger}->error("Transport Browser: Failed to list files: $_");
     };
 
-    # Build parent path for navigation
-    my $parent_path = $self->_get_parent_path( $current_path );
+    # Build parent path for navigation (using display paths)
+    my $parent_path = $self->_get_parent_path( $display_path );
 
     $template->param(
         view           => 'browse',
         transport_id   => $transport_id,
         transport_name => $transport_name,
         transport_type => uc($transport_type),
-        current_path   => $current_path,
+        current_path   => $display_path,
         parent_path    => $parent_path,
         files          => $files,
         listing_error  => $listing_error,
