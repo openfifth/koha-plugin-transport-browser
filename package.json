@@ -1,0 +1,35 @@
+{
+  "plugin": {
+    "module": "Koha::Plugin::Com::OpenFifth::TransportBrowser",
+    "pm_path": "Koha/Plugin/Com/OpenFifth/TransportBrowser.pm"
+  },
+  "name": "koha-plugin-transport-browser",
+  "version": "1.0.0",
+  "description": "A Koha plugin tool that provides a simple FTP/SFTP directory browser using the Koha::File::Transport infrastructure",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "version:patch": "node increment_version.js patch | cat",
+    "version:minor": "node increment_version.js minor | cat",
+    "version:major": "node increment_version.js major | cat",
+    "release:patch": "node increment_version.js patch | cat && git add . && git commit -m 'chore: bump version' && VERSION=$(node -p 'require(\"./package.json\").version') && git tag -a v$VERSION -m \"Release v$VERSION\" && git push origin main --follow-tags",
+    "release:minor": "node increment_version.js minor | cat && git add . && git commit -m 'chore: bump version' && VERSION=$(node -p 'require(\"./package.json\").version') && git tag -a v$VERSION -m \"Release v$VERSION\" && git push origin main --follow-tags",
+    "release:major": "node increment_version.js major | cat && git add . && git commit -m 'chore: bump version' && VERSION=$(node -p 'require(\"./package.json\").version') && git tag -a v$VERSION -m \"Release v$VERSION\" && git push origin main --follow-tags",
+    "release": "bash ./release_kpz.sh"
+  },
+  "keywords": [
+    "koha",
+    "plugin",
+    "ftp",
+    "sftp",
+    "transport",
+    "browser",
+    "file"
+  ],
+  "author": "Open Fifth",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Open-Fifth/koha-plugin-transport-browser.git"
+  }
+}

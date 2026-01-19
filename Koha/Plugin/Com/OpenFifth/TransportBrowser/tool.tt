@@ -1,0 +1,275 @@
+[% USE raw %]
+[% USE Asset %]
+[% PROCESS 'i18n.inc' %]
+[% SET footerjs = 1 %]
+[% INCLUDE 'doc-head-open.inc' %]
+<title>[% FILTER collapse %]
+    [% t("Transport Browser") | html %] &rsaquo;
+    [% t("Plugins") | html %] &rsaquo;
+    [% t("Tools") | html %] &rsaquo;
+    [% t("Koha") | html %]
+[% END %]</title>
+[% INCLUDE 'doc-head-close.inc' %]
+<style>
+    .file-icon { margin-right: 0.5em; }
+    .file-dir { font-weight: bold; }
+    .file-size { text-align: right; }
+    .current-path {
+        font-family: monospace;
+        background: #f5f5f5;
+        padding: 0.5em 1em;
+        border-radius: 4px;
+        margin-bottom: 1em;
+    }
+    .breadcrumb-path { margin-bottom: 1em; }
+    .transport-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 1em;
+        margin-bottom: 1em;
+        transition: box-shadow 0.2s;
+    }
+    .transport-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .transport-type-badge {
+        display: inline-block;
+        padding: 0.2em 0.6em;
+        border-radius: 4px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+    .transport-type-sftp { background: #d4edda; color: #155724; }
+    .transport-type-ftp { background: #fff3cd; color: #856404; }
+</style>
+</head>
+<body id="plugins_transport_browser" class="plugins">
+[% WRAPPER 'header.inc' %]
+    [% INCLUDE 'cat-search.inc' %]
+[% END %]
+
+[% WRAPPER 'sub-header.inc' %]
+    [% WRAPPER breadcrumbs %]
+        [% WRAPPER breadcrumb_item %]
+            <a href="/cgi-bin/koha/plugins/plugins-home.pl">Plugins</a>
+        [% END %]
+        [% IF view == 'browse' %]
+            [% WRAPPER breadcrumb_item %]
+                <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool">Transport Browser</a>
+            [% END %]
+            [% WRAPPER breadcrumb_item bc_active = 1 %]
+                <span>[% transport_name | html %]</span>
+            [% END %]
+        [% ELSE %]
+            [% WRAPPER breadcrumb_item bc_active = 1 %]
+                <span>Transport Browser</span>
+            [% END %]
+        [% END %]
+    [% END %]
+[% END %]
+
+<div class="main container-fluid">
+    <div class="row">
+        <div class="col-md-10 order-md-2 order-sm-1">
+            <main>
+                [% IF view == 'list' %]
+                    <!-- Transport Selection View -->
+                    <h1>Transport Browser</h1>
+                    <p>Select a transport server to browse its remote file system.</p>
+
+                    [% IF transports.size %]
+                        <div class="row">
+                            [% FOREACH transport IN transports %]
+                                <div class="col-md-6 col-lg-4">
+                                    <div class="transport-card">
+                                        <h4>
+                                            <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool&transport_id=[% transport.id %]">
+                                                [% transport.name | html %]
+                                            </a>
+                                        </h4>
+                                        <p>
+                                            <span class="transport-type-badge transport-type-[% transport.transport | html %]">
+                                                [% transport.transport | upper | html %]
+                                            </span>
+                                        </p>
+                                        <p class="text-muted">
+                                            <strong>Host:</strong> [% transport.host | html %]:[% transport.port | html %]<br>
+                                            <strong>User:</strong> [% transport.user_name | html %]
+                                        </p>
+                                        [% IF transport.download_directory %]
+                                            <p class="text-muted">
+                                                <strong>Download dir:</strong> [% transport.download_directory | html %]
+                                            </p>
+                                        [% END %]
+                                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool&transport_id=[% transport.id %]" class="btn btn-primary btn-sm">
+                                            <i class="fa fa-folder-open"></i> Browse
+                                        </a>
+                                    </div>
+                                </div>
+                            [% END %]
+                        </div>
+                    [% ELSE %]
+                        <div class="alert alert-info">
+                            <p>No transport servers are configured.</p>
+                            <p>
+                                <a href="/cgi-bin/koha/admin/sftp_servers.pl?op=add_form" class="btn btn-primary">
+                                    <i class="fa fa-plus"></i> Add a transport server
+                                </a>
+                            </p>
+                        </div>
+                    [% END %]
+
+                [% ELSIF view == 'browse' %]
+                    <!-- Directory Browser View -->
+                    <h1>
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool" class="btn btn-default btn-sm" title="Back to transport list">
+                            <i class="fa fa-arrow-left"></i>
+                        </a>
+                        [% transport_name | html %]
+                        <span class="transport-type-badge transport-type-[% transport_type | lower | html %]">
+                            [% transport_type | html %]
+                        </span>
+                    </h1>
+
+                    <!-- Current path display -->
+                    <div class="current-path">
+                        <strong>Current path:</strong> [% current_path | html %]
+                    </div>
+
+                    <!-- Navigation breadcrumbs -->
+                    <div class="breadcrumb-path">
+                        [% IF parent_path.defined %]
+                            <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool&transport_id=[% transport_id %]&path=[% parent_path | uri %]" class="btn btn-default btn-sm">
+                                <i class="fa fa-level-up"></i> Parent Directory
+                            </a>
+                        [% END %]
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool&transport_id=[% transport_id %]&path=/" class="btn btn-default btn-sm">
+                            <i class="fa fa-home"></i> Root
+                        </a>
+                    </div>
+
+                    [% IF listing_error %]
+                        <div class="alert alert-warning">
+                            <strong>Warning:</strong> Could not list directory contents: [% listing_error | html %]
+                        </div>
+                    [% END %]
+
+                    [% IF files.size %]
+                        <div class="page-section">
+                            <p>[% file_count %] item(s) found</p>
+                            <table class="table table-striped table-hover" id="file-listing">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Size</th>
+                                        <th>Modified</th>
+                                        <th>Permissions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    [% FOREACH file IN files %]
+                                        <tr>
+                                            <td>
+                                                [% IF file.is_dir %]
+                                                    <i class="fa fa-folder file-icon" style="color: #f0ad4e;"></i>
+                                                    [% SET new_path = current_path == '/' ? '/' _ file.name : current_path _ '/' _ file.name %]
+                                                    <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool&transport_id=[% transport_id %]&path=[% new_path | uri %]" class="file-dir">
+                                                        [% file.name | html %]
+                                                    </a>
+                                                [% ELSE %]
+                                                    <i class="fa fa-file file-icon" style="color: #6c757d;"></i>
+                                                    <span>[% file.name | html %]</span>
+                                                [% END %]
+                                            </td>
+                                            <td class="file-size">
+                                                [% IF file.is_dir %]
+                                                    &mdash;
+                                                [% ELSIF file.size %]
+                                                    [% file.size | html %] bytes
+                                                [% ELSE %]
+                                                    &mdash;
+                                                [% END %]
+                                            </td>
+                                            <td>
+                                                [% IF file.mtime %]
+                                                    [% file.mtime | html %]
+                                                [% ELSE %]
+                                                    &mdash;
+                                                [% END %]
+                                            </td>
+                                            <td>
+                                                [% IF file.perms %]
+                                                    <code>[% file.perms | html %]</code>
+                                                [% ELSE %]
+                                                    &mdash;
+                                                [% END %]
+                                            </td>
+                                        </tr>
+                                    [% END %]
+                                </tbody>
+                            </table>
+                        </div>
+                    [% ELSE %]
+                        <div class="alert alert-info">
+                            <p>This directory is empty.</p>
+                        </div>
+                    [% END %]
+
+                [% ELSIF view == 'error' %]
+                    <!-- Error View -->
+                    <h1>Transport Browser</h1>
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> [% error | html %]
+                    </div>
+                    <p>
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool" class="btn btn-default">
+                            <i class="fa fa-arrow-left"></i> Back to transport list
+                        </a>
+                    </p>
+
+                [% ELSE %]
+                    <!-- Unknown view fallback -->
+                    <h1>Transport Browser</h1>
+                    <p>Unknown view requested.</p>
+                    <p>
+                        <a href="/cgi-bin/koha/plugins/run.pl?class=[% CLASS %]&method=tool" class="btn btn-default">
+                            <i class="fa fa-arrow-left"></i> Back to transport list
+                        </a>
+                    </p>
+                [% END %]
+
+            </main>
+        </div>
+        <div class="col-md-2 order-sm-2 order-md-1">
+            <aside>
+                [% INCLUDE 'tools-menu.inc' %]
+            </aside>
+        </div>
+    </div>
+</div>
+
+[% MACRO jsinclude BLOCK %]
+    [% Asset.js("js/tools-menu.js") | $raw %]
+    [% INCLUDE 'datatables.inc' %]
+    <script>
+        $(document).ready(function() {
+            // Initialize DataTables for file listing if present
+            if ($('#file-listing').length) {
+                $('#file-listing').DataTable({
+                    "paging": true,
+                    "pageLength": 25,
+                    "ordering": true,
+                    "order": [[0, "asc"]],
+                    "columnDefs": [
+                        { "orderable": true, "targets": [0, 1, 2, 3] }
+                    ],
+                    "language": {
+                        "emptyTable": "No files found in this directory"
+                    }
+                });
+            }
+        });
+    </script>
+[% END %]
+
+[% INCLUDE 'intranet-bottom.inc' %]
