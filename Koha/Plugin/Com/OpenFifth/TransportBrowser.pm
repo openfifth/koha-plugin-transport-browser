@@ -25,14 +25,14 @@ use Try::Tiny qw(catch try);
 use Koha::File::Transports;
 use Koha::Logger;
 
-our $VERSION = '1.0.3';
+our $VERSION = '1.0.4';
 
 our $metadata = {
     name            => 'Transport Browser',
     author          => 'Martin Renvoize',
     date_authored   => '2026-01-19',
-    date_updated    => '2026-01-19',
-    minimum_version => '24.11.00.000',
+    date_updated    => '2026-07-03',
+    minimum_version => '25.11.00.000',
     maximum_version => undef,
     version         => $VERSION,
     description     => 'A Koha plugin tool that provides a simple FTP/SFTP directory browser using the Koha::File::Transport infrastructure.',
@@ -133,19 +133,31 @@ sub _browse_transport {
     my $transport_type = $transport->transport || 'unknown';
 
     # Attempt connection
+    #
+    # Note: Koha::File::Transport::connect() returns a true value on success
+    # and undef on failure (recording details via object_messages) rather than
+    # throwing, so we must check the return value explicitly. The try/catch
+    # still guards against the protocol layer die-ing unexpectedly.
     my $connected = 0;
     my $connection_error;
     my $base_path = '/';
 
     try {
-        $transport->connect();
-        $connected = 1;
-        $self->{logger}->info("Transport Browser: Connected successfully");
+        $connected = $transport->connect();
 
-        # Determine the base path (initial working directory)
-        if ($transport->{connection} && $transport->{connection}->can('cwd')) {
-            $base_path = $transport->{connection}->cwd;
-            $self->{logger}->info("Transport Browser: Base path (initial cwd): '$base_path'");
+        if ( $connected ) {
+            $self->{logger}->info("Transport Browser: Connected successfully");
+
+            # Determine the base path (initial working directory)
+            if ($transport->{connection} && $transport->{connection}->can('cwd')) {
+                $base_path = $transport->{connection}->cwd // '/';
+                $self->{logger}->info("Transport Browser: Base path (initial cwd): '$base_path'");
+            }
+        }
+        else {
+            $connection_error = $self->_get_transport_error( $transport )
+                || 'Unknown connection error';
+            $self->{logger}->error("Transport Browser: Failed to connect to '$transport_name': $connection_error");
         }
     }
     catch {
@@ -182,51 +194,47 @@ sub _browse_transport {
 
     $self->{logger}->info("Transport Browser: UI path '$path' -> actual path '$actual_path', display path '$display_path'");
 
-    # Change to requested directory if different from base_path
-    my $current_path = $display_path;
-    if ( $actual_path ne $base_path ) {
-        $self->{logger}->info("Transport Browser: Attempting to change to directory '$actual_path'");
-        try {
-            $transport->change_directory( $actual_path );
-            $self->{logger}->info("Transport Browser: Successfully changed to directory '$actual_path'");
-            # Debug: Check actual working directory
-            if ($transport->{connection} && $transport->{connection}->can('cwd')) {
-                my $actual_cwd = $transport->{connection}->cwd;
-                $self->{logger}->info("Transport Browser: Actual working directory after change: '$actual_cwd'");
-            }
-        }
-        catch {
-            $self->{logger}->warn("Transport Browser: Failed to change to directory '$actual_path': $_");
-            # Try to stay at base path
-            try {
-                $transport->change_directory( $base_path );
-                $current_path = '/';
-                $display_path = '/';
-                $self->{logger}->info("Transport Browser: Fell back to base directory");
-            }
-            catch {
-                $self->{logger}->warn("Transport Browser: Failed to change to base directory: $_");
-                # Ignore - we'll show what we can
-            };
-        };
-    }
-
-    # Get file listing
+    # Navigate to the requested directory, then list it.
+    #
+    # We use change_directory() followed by an argument-less list_files() rather
+    # than passing a path to list_files(). This is the lowest-common-denominator
+    # API supported across all Koha 25.11 file-transport variants: some variants
+    # accept a { path } option to list_files() while others ignore arguments and
+    # simply list the current working directory. Changing directory explicitly
+    # works everywhere and, on variants with automatic directory management, also
+    # disables auto-switching to a configured download_directory so we list
+    # exactly the directory the user navigated to. Both methods return a true
+    # value / arrayref on success and undef on failure (details via
+    # object_messages).
     my $files = [];
     my $listing_error;
 
     try {
-        $self->{logger}->info("Transport Browser: Listing files in directory '$actual_path' (display: '$display_path')");
-        # Debug: Check actual working directory before listing
-        if ($transport->{connection} && $transport->{connection}->can('cwd')) {
-            my $actual_cwd = $transport->{connection}->cwd;
-            $self->{logger}->info("Transport Browser: Actual working directory before list: '$actual_cwd'");
+        $self->{logger}->info("Transport Browser: Changing to directory '$actual_path'");
+        unless ( $transport->change_directory($actual_path) ) {
+
+            # Fall back to the base directory so the user still sees something
+            my $error = $self->_get_transport_error($transport)
+                || "Failed to change to directory '$display_path'";
+            $self->{logger}->warn("Transport Browser: $error; falling back to base directory");
+            $transport->change_directory($base_path);
+            $display_path = '/';
         }
-        my $raw_files = $transport->list_files($actual_path);
-        $files = $self->_format_file_list( $raw_files, $transport_type );
-        $self->{logger}->info("Transport Browser: Found " . scalar(@$files) . " files/directories");
-        foreach my $file (@$files) {
-            $self->{logger}->debug("Transport Browser: File: " . $file->{name} . " (dir: " . ($file->{is_dir} ? 'yes' : 'no') . ")");
+
+        $self->{logger}->info("Transport Browser: Listing files in '$display_path'");
+        my $raw_files = $transport->list_files();
+
+        if ( defined $raw_files ) {
+            $files = $self->_format_file_list( $raw_files, $transport_type );
+            $self->{logger}->info("Transport Browser: Found " . scalar(@$files) . " files/directories");
+            foreach my $file (@$files) {
+                $self->{logger}->debug("Transport Browser: File: " . $file->{name} . " (dir: " . ($file->{is_dir} ? 'yes' : 'no') . ")");
+            }
+        }
+        else {
+            $listing_error = $self->_get_transport_error( $transport )
+                || "Failed to list files in '$display_path'";
+            $self->{logger}->error("Transport Browser: Failed to list files: $listing_error");
         }
     }
     catch {
@@ -250,6 +258,37 @@ sub _browse_transport {
     );
 
     $self->output_html( $template->output() );
+}
+
+=head2 _get_transport_error
+
+Extract a human-readable error string from a transport's object_messages.
+
+Koha::File::Transport records failures as messages of type 'error' whose
+payload hashref carries C<error> (and, for SFTP, C<error_raw>) keys. Returns
+the most recent error message, or undef if none is present.
+
+=cut
+
+sub _get_transport_error {
+    my ( $self, $transport ) = @_;
+
+    return unless $transport && $transport->can('object_messages');
+
+    my $messages = $transport->object_messages;
+    return unless $messages && ref($messages) eq 'ARRAY';
+
+    for my $message ( reverse @{$messages} ) {
+        next unless $message->type eq 'error';
+
+        my $payload = $message->payload;
+        if ( ref($payload) eq 'HASH' ) {
+            return $payload->{error} || $payload->{error_raw} || $message->message;
+        }
+        return $message->message;
+    }
+
+    return;
 }
 
 =head2 _format_file_list
