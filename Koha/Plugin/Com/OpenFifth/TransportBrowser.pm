@@ -25,7 +25,7 @@ use Try::Tiny qw(catch try);
 use Koha::File::Transports;
 use Koha::Logger;
 
-our $VERSION = '1.0.6';
+our $VERSION = '1.0.7';
 
 our $metadata = {
     name            => 'Transport Browser',
