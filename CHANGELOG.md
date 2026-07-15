@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `_parse_file_entry`/`_format_perms` no longer branch per transport type.
+  Requires the Koha core fix for bug 43078 (unified `list_files()` shape
+  across FTP/Local/SFTP, including directories and a `type` field) - bumping
+  `minimum_version` once that fix's target release is known.
+- Directory browsing now also works against FTP servers (previously FTP
+  listings never included subdirectories).
+
 ## [1.0.4] - 2026-07-03
 
 ### Fixed
