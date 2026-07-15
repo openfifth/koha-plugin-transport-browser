@@ -225,7 +225,7 @@ sub _browse_transport {
         my $raw_files = $transport->list_files();
 
         if ( defined $raw_files ) {
-            $files = $self->_format_file_list( $raw_files, $transport_type );
+            $files = $self->_format_file_list($raw_files);
             $self->{logger}->info("Transport Browser: Found " . scalar(@$files) . " files/directories");
             foreach my $file (@$files) {
                 $self->{logger}->debug("Transport Browser: File: " . $file->{name} . " (dir: " . ($file->{is_dir} ? 'yes' : 'no') . ")");
@@ -298,14 +298,14 @@ Format the raw file list from transport into a consistent structure.
 =cut
 
 sub _format_file_list {
-    my ( $self, $raw_files, $transport_type ) = @_;
+    my ( $self, $raw_files ) = @_;
 
     return [] unless $raw_files && ref($raw_files) eq 'ARRAY';
 
     my @formatted;
 
     foreach my $file ( @{$raw_files} ) {
-        my $entry = $self->_parse_file_entry( $file, $transport_type );
+        my $entry = $self->_parse_file_entry($file);
         next unless $entry;
         push @formatted, $entry;
     }
@@ -321,60 +321,25 @@ sub _format_file_list {
 
 =head2 _parse_file_entry
 
-Parse a single file entry from the transport's list_files output.
+Parse a single file entry from the transport's list_files output. All three
+Koha::File::Transport backends (FTP, Local, SFTP) now return the same flat
+shape (filename, size, mtime, perms, type), so no backend-specific parsing
+is needed here.
 
 =cut
 
 sub _parse_file_entry {
-    my ( $self, $file, $transport_type ) = @_;
+    my ( $self, $file ) = @_;
 
-    my $entry = {
-        name     => '',
-        size     => 0,
-        mtime    => '',
-        is_dir   => 0,
-        perms    => '',
+    return undef unless ref($file) eq 'HASH' && defined $file->{filename} && length $file->{filename};
+
+    return {
+        name   => $file->{filename},
+        size   => $file->{size} // 0,
+        mtime  => $self->_format_time( $file->{mtime} ),
+        is_dir => ( ( $file->{type} // '' ) eq 'directory' ) ? 1 : 0,
+        perms  => $self->_format_perms( $file->{perms}, $file->{type} ),
     };
-
-    if ( $transport_type eq 'sftp' ) {
-        # SFTP returns { filename => '...', a => Net::SFTP::Foreign::Attributes }
-        if ( ref($file) eq 'HASH' ) {
-            $entry->{name} = $file->{filename} || '';
-
-            if ( $file->{a} && $file->{a}->can('size') ) {
-                $entry->{size}  = $file->{a}->size || 0;
-                $entry->{mtime} = $self->_format_time( $file->{a}->mtime );
-                $entry->{is_dir} = ( $file->{a}->perm & 0040000 ) ? 1 : 0;
-                $entry->{perms} = $self->_format_perms( $file->{a}->perm );
-            }
-        }
-    }
-    elsif ( $transport_type eq 'ftp' ) {
-        # FTP returns simple array of filenames
-        if ( ref($file) eq '' ) {
-            $entry->{name} = $file;
-            # FTP doesn't give us detailed info via simple ls
-        }
-        elsif ( ref($file) eq 'HASH' ) {
-            $entry->{name} = $file->{filename} || $file->{name} || '';
-            $entry->{size} = $file->{size} || 0;
-            $entry->{is_dir} = $file->{is_dir} || 0;
-        }
-    }
-    else {
-        # Generic fallback
-        if ( ref($file) eq 'HASH' ) {
-            $entry->{name} = $file->{filename} || $file->{name} || '';
-        }
-        elsif ( ref($file) eq '' ) {
-            $entry->{name} = $file;
-        }
-    }
-
-    # Skip . and ..
-    return undef if $entry->{name} eq '.' || $entry->{name} eq '..';
-
-    return $entry;
 }
 
 =head2 _format_time
@@ -397,27 +362,26 @@ sub _format_time {
 
 =head2 _format_perms
 
-Format Unix permissions to rwx string.
+Format a Unix octal permissions string (e.g. "0644", as returned by
+Koha::File::Transport's list_files) plus a type ('file'/'directory'/'other')
+into an rwx display string (e.g. "-rw-r--r--" or "drwxr-xr-x").
 
 =cut
 
 sub _format_perms {
-    my ( $self, $mode ) = @_;
+    my ( $self, $perms, $type ) = @_;
 
-    return '' unless defined $mode;
+    return '' unless defined $perms;
 
+    my $mode = oct($perms) & oct('07777');
     my @chars = qw(--- --x -w- -wx r-- r-x rw- rwx);
-    my $perms = '';
 
-    # Directory/file indicator
-    $perms .= ( $mode & 0040000 ) ? 'd' : '-';
+    my $out = ( ( $type // '' ) eq 'directory' ) ? 'd' : '-';
+    $out .= $chars[ ( $mode >> 6 ) & 7 ];
+    $out .= $chars[ ( $mode >> 3 ) & 7 ];
+    $out .= $chars[ $mode & 7 ];
 
-    # Owner, group, other permissions
-    $perms .= $chars[ ( $mode >> 6 ) & 7 ];
-    $perms .= $chars[ ( $mode >> 3 ) & 7 ];
-    $perms .= $chars[ $mode & 7 ];
-
-    return $perms;
+    return $out;
 }
 
 =head2 _format_size
