@@ -25,13 +25,13 @@ use Try::Tiny qw(catch try);
 use Koha::File::Transports;
 use Koha::Logger;
 
-our $VERSION = '1.0.7';
+our $VERSION = '1.1.0';
 
 our $metadata = {
     name            => 'Transport Browser',
     author          => 'Martin Renvoize',
     date_authored   => '2026-01-19',
-    date_updated    => '2026-07-03',
+    date_updated    => '2026-07-16',
     minimum_version => '25.11.00.000',
     maximum_version => undef,
     version         => $VERSION,
