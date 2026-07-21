@@ -20,7 +20,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        koha-version: [main, stable, oldstable]
+        # TEMPORARY: bug 43088 (current_directory(), required by this
+        # plugin's FTP fix) has only landed on OpenFifth's 25.11.o5th
+        # branch, not on any upstream Koha-Community branch yet. Testing
+        # against main/stable/oldstable would fail until it lands there.
+        # Revert to `koha-version: [main, stable, oldstable]` (and restore
+        # the "Get Koha Version Branch Name" step + upstream checkout below)
+        # once bug 43088 ships upstream.
+        koha-version: [25.11.o5th]
 
     steps:
       - name: Checkout plugin code
@@ -28,25 +35,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get Koha Version Branch Name
-        id: koha-version
-        uses: "bywatersolutions/github-action-koha-get-version-by-label@v2"
-        with:
-          version-label: "${{ matrix.koha-version }}"
-
       - name: Set up environment variables
         run: |
           IFS='/' read -r -a parts <<< "$GITHUB_REPOSITORY"
           GITHUB_REPO="${parts[1]}"
           echo "GITHUB_REPO=$GITHUB_REPO" >> $GITHUB_ENV
-          echo "KOHA_BRANCH=${{ steps.koha-version.outputs.current-branch-name }}" >> $GITHUB_ENV
+          echo "KOHA_BRANCH=${{ matrix.koha-version }}" >> $GITHUB_ENV
           echo "PLUGINS_DIR=$(pwd)/.." >> $GITHUB_ENV
           echo "SYNC_REPO=$(pwd)/../kohaclone" >> $GITHUB_ENV
 
       - name: Check out Koha
         run: |
           cd ..
-          git clone --branch ${{ env.KOHA_BRANCH }} --single-branch --depth 1 https://github.com/Koha-Community/Koha.git kohaclone
+          # TEMPORARY: OpenFifth fork, not upstream Koha-Community/Koha - revert together with the matrix above.
+          git clone --branch ${{ env.KOHA_BRANCH }} --single-branch --depth 1 https://github.com/openfifth/koha.git kohaclone
 
       - name: Install koha-testing-docker
         run: |
@@ -63,12 +65,8 @@ jobs:
           export LOCAL_USER_ID=$(id -u)
           export KTD_HOME=$(pwd)
           export SKIP_L10N=yes
-          # Use version-major-minor but handle main branch case
-          if [ "${{ matrix.koha-version }}" = "main" ]; then
-            export KOHA_IMAGE=main
-          else
-            export KOHA_IMAGE=${{ steps.koha-version.outputs.version-major-minor }}
-          fi
+          # TEMPORARY: hardcoded to match the 25.11.o5th checkout above - revert together with the matrix.
+          export KOHA_IMAGE=25.11
           ktd --name transport-browser --plugins up -d
 
       - name: Wait for KTD to be ready
