@@ -148,11 +148,14 @@ sub _browse_transport {
         if ( $connected ) {
             $self->{logger}->info("Transport Browser: Connected successfully");
 
-            # Determine the base path (initial working directory)
-            if ($transport->{connection} && $transport->{connection}->can('cwd')) {
-                $base_path = $transport->{connection}->cwd // '/';
-                $self->{logger}->info("Transport Browser: Base path (initial cwd): '$base_path'");
-            }
+            # Determine the base path (initial working directory). Koha core
+            # (bug 43088) provides current_directory() as a portable,
+            # read-only accessor across FTP/SFTP/Local - do not read
+            # $transport->{connection}->cwd directly, since the underlying
+            # libraries' own cwd() methods disagree on whether that's a
+            # query or a navigation command.
+            $base_path = $transport->current_directory // '/';
+            $self->{logger}->info("Transport Browser: Base path (initial cwd): '$base_path'");
         }
         else {
             $connection_error = $self->_get_transport_error( $transport )

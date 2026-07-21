@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Clicking into a directory on an FTP transport reloaded the listing without
+  navigating in. The plugin computed the initial working directory via
+  `$transport->{connection}->cwd`, which is a read-only accessor for SFTP but
+  a *mutator* for FTP (`Net::FTP::cwd()` with no argument defaults to `/`,
+  issues a real `CWD /` command, and returns a boolean rather than a path) -
+  so for FTP the "base path" became `"1"`/`"0"`, every path built from it was
+  bogus, and the fallback silently re-listed root. Now uses Koha core's new
+  `Koha::File::Transport::current_directory()` (bug 43088), which gives each
+  backend its own real read-only accessor (`pwd()` for FTP, `cwd()` for SFTP).
+  Requires the Koha core fix for bug 43088 (`current_directory()`), which has
+  landed on the `25.11.o5th` branch.
+
 ### Changed
 
 - `_parse_file_entry`/`_format_perms` no longer branch per transport type.
